@@ -17,36 +17,54 @@ import datetime
 from copy import deepcopy
 import time
 import operator
+import profile
+
 
 import ystockquote
 
+
+
+DAYSYEAR = 251
 class Quotes:
     '''
-    NOTE: the historical data is three days delay.
+    @@summary: This class access the historical data
+    NOTE: the newest data we are able to access is yesterday.
     '''
     def __init__(self, startDate, endDate, stockName):
+        '''
+        historical data from startDate and endDate about stockName
+        '''
         
         self.startDate = startDate
         self.endDate = endDate
         self.stockName = stockName
         
     def dataAccess(self):
+        # access data from yahoo
+        # return: date, open, close, high, low, volume
         quotes = quotes_historical_yahoo(self.stockName, self.startDate, self.endDate)
-    
+        
+        # if error
         if len(quotes) == 0:
             print self.stockName
             raise SystemExit   
-        quotes = np.array(map(list, quotes))
-        
+        #quotes = np.array(map(list, quotes))
+        quotes = np.array(quotes)
         
         return quotes
         
         
 class PeakValleyFinder:
-    def __init__(self, startDate, endDate, stockName):
-        quotesOj = Quotes(startDate, endDate, stockName)
-        quotes = quotesOj.dataAccess()
-        self.quotes = quotes
+    def __init__(self, startDate, endDate, stockName, others=[]):
+        #self.getData()
+        if others == []:
+            
+            quotesOj = Quotes(startDate, endDate, stockName)
+            print stockName
+            quotes = quotesOj.dataAccess()
+            self.quotes = quotes
+        else:
+            self.quotes = others
                      
     def getPeaksValleys(self):
         return self.peakValleyAlgorithm()
@@ -59,9 +77,9 @@ class PeakValleyFinder:
 class PeakValleyFinderWin(PeakValleyFinder):
     
     def __init__(self, startDate, endDate, stockName,sizeBackForward=[30,30],
-                 fineSizeBackForward=[15,15],finalSizeBackForward=[10,4]):
+                 fineSizeBackForward=[15,15],finalSizeBackForward=[10,4], others=[]):
                      
-        PeakValleyFinder.__init__(self, startDate, endDate, stockName)                  
+        PeakValleyFinder.__init__(self, startDate, endDate, stockName, others=others)                  
         self.sizeBackForward = sizeBackForward
         self.fineSizeBackForward = fineSizeBackForward
         self.finalSizeBackForward = finalSizeBackForward
@@ -125,12 +143,21 @@ class PeakValleyFinderWin(PeakValleyFinder):
         return self.peakPrices, self.valleyPrices, flagPeaks, flagValleys
         
     def _moveWindow(self, flagPeaks, flagValleys, startPoint, endPoint, highPrices,
-                   lowPrices, sizeBackForward):
+                   lowPrices, sizeBackForward,isLast=False):
         '''
+        @@summary:
         This function is to find the peak and trough within pre-defined window 
-        size. The method to achieve that is to define a window, try
+        size. 
         
-        NOTE: flagPeaks and flagValleys are the outside variables 
+        flagPeaks,flagValeys: lists that store peaks and troughs. might be a empty,
+        might be not, in this case, the new peaks and troughs found should be appended.
+        
+        startPoint, endPoint: the first start point and the last end point of the window.
+        
+        sizeBackForward: a list with two elements. define the position of max(min) 
+        element in the window
+        
+         
         '''
         
             
@@ -144,6 +171,8 @@ class PeakValleyFinderWin(PeakValleyFinder):
         midPosition = sizeBackForward[0] + startPoint
         endStartPoint = endPoint-sizeBackForward[0] - sizeBackForward[1]-1
         # the start point for each window ranges from startPoint to endStartPoint
+            
+        
         for windowStart in range(startPoint,endStartPoint):
             '''
             within each windown, we try to compare the price of middle point with
@@ -199,6 +228,8 @@ class PeakValleyFinderWin(PeakValleyFinder):
 
             # update the middle point    
             midPosition += 1
+            
+        
         return flagPeaks, flagValleys, endStartPoint
         
     def peakValleyPlot(self):
@@ -218,13 +249,14 @@ class PeakValleyFinderWin(PeakValleyFinder):
 
 class CurrentFlaggerSingleStock():
     def __init__(self, startDate, endDate, stockName,flags,tolerance,toler50,toler100,
-                 flagWeights, timeWeights, sizeBackForward,fineSizeBackForward,finalSizeBackForward,liveData):
+                 flagWeights, timeWeights, sizeBackForward,fineSizeBackForward,finalSizeBackForward,liveData,others=[]):
                      
         self.peakValleyFinder = PeakValleyFinderWin(startDate=startDate, endDate=endDate, 
                                                     stockName=stockName,
                                                     sizeBackForward=sizeBackForward,
                                                     fineSizeBackForward=fineSizeBackForward,
-                                                    finalSizeBackForward=finalSizeBackForward)
+                                                    finalSizeBackForward=finalSizeBackForward,
+                                                    others=others)
                                                     
         self.stock = stockName
         self.quotes = self.peakValleyFinder.getQuotes()
@@ -232,8 +264,8 @@ class CurrentFlaggerSingleStock():
         self.peakPrices, self.valleyPrices = self.peakValleyFinder.getPeaksValleys()
         '''
         self.peakPrices,self.valleyPrices,self.flagPeaks,self.flagValleys=self.peakValleyFinder.getPeaksValleys()
-        self.flagWeights = flagWeights
-        self.timeWeights = timeWeights
+        self.flagWeights = np.array(flagWeights)
+        self.timeWeights = np.array(timeWeights)
         self.tolerance=tolerance
         self.toler50 = toler50
         self.toler100 = toler100
@@ -258,10 +290,190 @@ class CurrentFlaggerSingleStock():
         return deepcopy(self.annotation)
         
 
-    def flagChecker(self):
+    def flagChecker(self,isBackTest=False):
         # choose one type of trade stradgy(long/short) based on the nearest points
         # then to find the flaging score of current price based on the stradgey type
+                
+        if isBackTest:
+            self.checkAlgorithmBackTesting()
+            
+        else:
+            self.checkAlgorithm() 
+      
+    
         
+    def plot(self, savePic=False):
+        self.plotByChange(savePic)
+            
+             
+        
+        
+#    flagsDetails = self.annotation
+#    return flagPrices, score,flagsDetals, tradeType
+        
+class FlaggerByChangeSingle(CurrentFlaggerSingleStock):
+    '''
+    @@summary: this calss is inheritated from CurrentFlaggerSingleStock
+    overide the flagging method via flagger function
+    overide the plot method via plot method
+    '''
+    def __init__(self, startDate, endDate, stockName,flags,tolerance,toler50,toler100,
+                 flagWeights, timeWeights, sizeBackForward,fineSizeBackForward,
+                 finalSizeBackForward,liveData,others=[]):
+                     
+        CurrentFlaggerSingleStock.__init__(self, startDate, endDate, stockName,
+                                           flags,tolerance,toler50,toler100,
+                                           flagWeights, timeWeights, sizeBackForward,
+                                           fineSizeBackForward,finalSizeBackForward,
+                                           liveData,
+                                           others=others)
+                                           
+        self.entryPrice = None
+                 
+    def checkAlgorithmBackTesting(self):
+        '''
+        @@summary: this function use the exact flag values to do the backtesting
+        without the tolerence.
+        '''
+        # after this function, flags are minus flags if trade type is long
+        self.comparators, self.comparatorIndices, oppoComparators, oppoComparatorIndices,self.currentPriceWeCare = self._shortLongChecker()
+       
+        timeAxis = self.quotes[:,0]
+    
+        ## rule out the invalid peaks and troughs based on higherhigh and lowerlow
+        ## update the comparators, comparatorIndices based on the result.
+        if self.tradeType == 'long':
+#            dt = datetime.date.fromordinal(int(self.quotes[-1,0]) )
+#            if dt.strftime('%Y%m%d') == '20080122':
+#                pass
+            # isValid may like [T, T, F, F,T,...]
+            # is invalid by no means if less then the lowest
+            notValid = oppoComparators<self.quotes[-1,4]
+            
+            # find the position of the last invalid point.
+            # rule out the position before that
+            if all(notValid) == True:
+                minBoundary = oppoComparatorIndices[-1] 
+            elif any(notValid) == False:
+                minBoundary = -1
+            else:
+                minBoundary = oppoComparatorIndices[notValid][-1]
+                
+            isValid = self.comparatorIndices > minBoundary
+            
+            self.comparatorIndices = self.comparatorIndices[isValid]
+            self.comparators = self.comparators[isValid]
+            
+            # if there is no valid flag point, score = 0 and return
+            if self.comparators == []:
+                self.score =0
+                return
+                    
+            self.flagIndicatorsCounter = [[0 for row in range(len(self.comparators))] for col in range(len(self.flags))]
+            
+         
+            
+            for iflag, flag in enumerate(self.flags):
+                desiredPrices = (flag+1)*self.comparators
+                for comparatorIndex, desiredPrice in enumerate(desiredPrices):
+                    if self.quotes[-1,4]<=desiredPrice<=self.quotes[-1,3]:
+                        # and if there is no lower low < the desired Price
+                        # --> flag the current price, record
+                        position = self.comparatorIndices[comparatorIndex]
+                        # all the previous lowest point should be larger than the desiredPrice
+                        # disgard the last one of quotes
+                        if all(self.quotes[position:-1,4]>= desiredPrice):
+                            self.flagIndicatorsCounter[iflag][comparatorIndex] = 1
+                           
+                            price = self.comparators[comparatorIndex]
+                            self.annotation.append([timeAxis[self.comparatorIndices[comparatorIndex]], round(price,2),str(self.flags[iflag]*100)+'%'])
+                            
+                            
+                            ##### entry Price #####
+                            ## some tricks: 1. the desired value of the largest valid flagger
+                            ##              2. for same flagger, the desired value of the nearest
+                            ## so just the last record would automatically holds the above two.
+                            self.entryPrice = desiredPrice
+                        
+                        # if there is lower low, irrelevent. check the next desire price
+                        else:
+                            continue
+                    # if the desired price is not within the range, check the next desire price                        
+                    else:
+                        continue
+                    
+                    
+                            
+        else:
+            # the first true to the left end --> invalid(abandant)
+                    
+            # isValid may like [T, T, F, F,T,...]
+            # is invalid by no means if less then the lowest
+            notValid = oppoComparators>self.quotes[-1,3]
+            dt = datetime.date.fromordinal(int(self.quotes[-1,0]) )
+            if dt.strftime('%Y%m%d') == '20111013':
+                pass
+            # find the position of the last invalid point.
+            # rule out the position before that
+            if all(notValid) == True:
+                minBoundary = oppoComparatorIndices[-1]
+            elif any(notValid) == False:
+                minBoundary = -1
+            else:
+                minBoundary = oppoComparatorIndices[notValid][-1] 
+            isValid = self.comparatorIndices>minBoundary
+            self.comparatorIndices = self.comparatorIndices[isValid]
+            self.comparators = self.comparators[isValid]
+            
+            # if there is no valid flag point, score = 0 and return
+            if self.comparators == []:
+                self.score =0
+                return
+                    
+
+            self.flagIndicatorsCounter = [[0 for row in range(len(self.comparators))] for col in range(len(self.flags))]
+    
+            
+            
+            for iflag, flag in enumerate(self.flags):
+                desiredPrices = (flag+1)*self.comparators
+                for comparatorIndex, desiredPrice in enumerate(desiredPrices):
+                    if self.quotes[-1,4]<=desiredPrice<=self.quotes[-1,3]:
+                        # and if there is no lower low < the desired Price
+                        # --> flag the current price, record
+                        position = self.comparatorIndices[comparatorIndex]
+                        if all(self.quotes[position:-1,3] <= desiredPrice):
+                            self.flagIndicatorsCounter[iflag][comparatorIndex] = 1
+                            price = self.comparators[comparatorIndex]
+                            self.annotation.append([timeAxis[self.comparatorIndices[comparatorIndex]], round(price,2),str(self.flags[iflag]*100)+'%'])
+                            
+                            
+                            ##### entry Price #####
+                            ## some tricks: 1. the desired value of the largest valid flagger
+                            ##              2. for same flagger, the desired value of the nearest
+                            ## so just the last record would automatically holds the above two.
+                            self.entryPrice = desiredPrice
+                        
+                        # if there is lower low, irrelevent. check the next desire price
+                        else:
+                            continue
+                    # if the desired price is not within the range, check the next desire price                        
+                    else:
+                        continue
+        
+            
+        # construct the flaggers vectors of the flagbook
+        ######   flaggers vector ########
+        ## vec = [3,2,0,1,..]   len(vec) == no. of flags,  element == amount of peaks(troughs) that flag.
+        
+        self.score =sum( sum(self.flagIndicatorsCounter,1) *  np.array(self.flagWeights))
+        print 'finish'  
+            
+            
+        
+        
+        
+    def checkAlgorithm(self):
         self.comparators, self.comparatorIndices, oppoComparators, oppoComparatorIndices,self.currentPriceWeCare = self._shortLongChecker()
         
         temp = self.currentPriceWeCare
@@ -334,7 +546,7 @@ class CurrentFlaggerSingleStock():
                                     #if any lower low within range less than the current price
                                     # finish the flagchecker (all the peaks before is meaningless)
                                 
-                                    if any(np.array(oppoComparators[oppoI:]) < self.currentPriceWeCare):
+                                    if any(oppoComparators[oppoI:] < self.currentPriceWeCare):
                                         self.score =sum( sum(self.flagIndicatorsCounter,1) *  np.array(self.flagWeights))
                                         return
                                     # if not, this flag is valid, go to next
@@ -371,19 +583,15 @@ class CurrentFlaggerSingleStock():
         print 'finish'
         # for each flags
         
-        
-        
-    
-        
     def _shortLongChecker(self):
-         
-         
-        # check which strategy should be applied(short/long)
-        # from the current date track back
+     
+     
+    # check which strategy should be applied(short/long)
+    # from the current date track back
  
-        
-        # if the position of last peak behind that of valley
-        # long it
+    
+    # if the position of last peak behind that of valley
+    # long it
         if self.flagPeaks[-1] > self.flagValleys[-1]:
             # long trade stradgy
             self.tradeType = 'long'
@@ -403,19 +611,11 @@ class CurrentFlaggerSingleStock():
             self.comparatorIndices = self.flagValleys
             oppoComparators = self.peakPrices
             oppoComparatorIndices =self. flagPeaks
-            
         
-            
-               
-        return np.array(self.comparators), self.comparatorIndices, oppoComparators, oppoComparatorIndices,currentPrice
+    
+        return np.array(self.comparators), np.array(self.comparatorIndices),np.array(oppoComparators), np.array(oppoComparatorIndices),currentPrice
         
-        
-        
-            
-        
-            
-        
-    def plot(self, savePic=False):
+    def plotByChange(self, savePic):
         timeAxis=self.quotes[:,0]
         fig = py.figure()
         
@@ -434,7 +634,7 @@ class CurrentFlaggerSingleStock():
                      
                      
         if self.score != 0:
- 
+            # check if the peak or trough flag the current price    
             for i in range(len(self.comparators)):
                 if sum(self.flagIndicatorsCounter,0)[i] == 0:
                     continue
@@ -452,46 +652,70 @@ class CurrentFlaggerSingleStock():
         
         #ax.annotate(str(round(self.quotes[-1,4],2)),xy=(timeAxis[-1],self.quotes[-1,4]))
         ax.annotate(str(round(self.currentPriceWeCare,2)),xy=(timeAxis[-1],self.quotes[-1,4]))
-            
-        py.title('Flagging points for '+ self.tradeType + ' trading strategy'+' of '+self.stock)
+        
+        currentTime = str(datetime.date.fromordinal(int(timeAxis[-1]))) 
+        title=['Flagging points for',self.tradeType,'trading strategy of',self.stock,currentTime]
+        py.title(' '.join(title))
         py.grid()
         
         
         if savePic==True:
-            if self.tradeType == 'long':
-                py.savefig('pic/buy_ft/'+self.stock+'.png', format='png')
+            if 1:
+                py.savefig('pic/all/'+self.stock+currentTime+'.png', format='png')
             else:
-                py.savefig('pic/sell_ft/'+self.stock+'.png', format='png')
+                py.savefig('pic/sell_ft/'+self.stock+currentTime+'.png', format='png')
             py.clf()
             py.close()
-            
-             
-        
-        
-#    flagsDetails = self.annotation
-#    return flagPrices, score,flagsDetals, tradeType
         
                                             
 
         
  
-class CurrentFlaggerMultiStocks():
+class MultiObjFlagger():
     
-    def __init__(self):
-        self.sellBook =[]
-        self.buyBook=[]
-        self.saveToCsv=True
-        self.savePic=True
-        self.sellBookDataFrame=pd.DataFrame()
-        self.buyBookDataFrame=pd.DataFrame()
-    def flagCheckers(self, startDate, endDate, stockNames,flags,tolerance,toler50,toler100,
+    def __init__(self, startDate, endDate, stockNames,flags,tolerance,toler50,toler100,
                      flagWeights, timeWeights, sizeBackForward,fineSizeBackForward,
                      finalSizeBackForward,saveToCsv,savePic,liveData=False):
+        
+        self.sellBook =[]
+        self.buyBook=[]
+        self.sellBookDataFrame=pd.DataFrame()
+        self.buyBookDataFrame=pd.DataFrame()
+        
+        self.startDate = startDate
+        self.endDate = endDate
+        self.stockNames = stockNames
+        self.flags = flags
+        self.tolerance = tolerance
+        self.toler50 = toler50
+        self.toler100 = toler100
+        self.flagWeights = flagWeights
+        self.timeWeights = timeWeights
+        self.sizeBackForward = sizeBackForward
+        self.fineSizeBackForward = fineSizeBackForward
+        self.finalSizeBackForward = finalSizeBackForward
         self.saveToCsv =  saveToCsv   
         self.savePic=savePic
         self.liveData = liveData
-#        self.mergeStock = mergeStock
+        self.stockNames = stockNames
         
+    def flagCheckers(self):
+        
+#        self.mergeStock = mergeStock
+        self.multiStrategy()
+
+       
+    
+class MultiStockFlagger(MultiObjFlagger):
+    def __init__(self,  startDate, endDate, stockNames,flags,tolerance,toler50,toler100,
+                     flagWeights, timeWeights, sizeBackForward,fineSizeBackForward,
+                     finalSizeBackForward,saveToCsv,savePic,liveData=False):
+        MultiObjFlagger.__init__(self, startDate, endDate, stockNames,flags,tolerance,toler50,toler100,
+                     flagWeights, timeWeights, sizeBackForward,fineSizeBackForward,
+                     finalSizeBackForward,saveToCsv,savePic,liveData)
+        
+    def multiStrategy(self):
+        stockNames = self.stockNames
         if type(stockNames) is str:
         
             dataobj = da.DataAccess('Yahoo')
@@ -500,8 +724,11 @@ class CurrentFlaggerMultiStocks():
         else:
             ls_symbols = stockNames
             
-            
+        
+    
+        
         for stock in ls_symbols:
+
             if stock =='ADT':
                 pass
             
@@ -510,18 +737,18 @@ class CurrentFlaggerMultiStocks():
             use the output of the object to creat report and plot the chart
             '''
             # use the
-            stockFlagObj = CurrentFlaggerSingleStock(startDate = startDate,   
-                                           endDate = endDate, 
+            stockFlagObj = FlaggerByChangeSingle(startDate = self.startDate,   
+                                           endDate = self.endDate, 
                                            stockName = stock,
-                                           flags=flags, 
-                                           tolerance = tolerance, 
-                                           toler50=toler50,
-                                           toler100=toler100,
-                                           flagWeights =flagWeights, 
-                                           timeWeights = False,
-                                           sizeBackForward=sizeBackForward,
-                                           fineSizeBackForward=fineSizeBackForward,
-                                           finalSizeBackForward=finalSizeBackForward,
+                                           flags=self.flags, 
+                                           tolerance = self.tolerance, 
+                                           toler50=self.toler50,
+                                           toler100=self.toler100,
+                                           flagWeights =self.flagWeights, 
+                                           timeWeights = self.timeWeights,
+                                           sizeBackForward=self.sizeBackForward,
+                                           fineSizeBackForward=self.fineSizeBackForward,
+                                           finalSizeBackForward=self.finalSizeBackForward,
                                            liveData=self.liveData)
                                            
             # check whether it's flagging using flagChecker method                              
@@ -550,7 +777,7 @@ class CurrentFlaggerMultiStocks():
             
 
         
-        return self.sellBookDataFrame, self.buyBookDataFrame
+        #return self.sellBookDataFrame, self.buyBookDataFrame
         
 
                 
@@ -590,14 +817,102 @@ class CurrentFlaggerMultiStocks():
                 stockFlagObj.plot(savePic=self.savePic)
             print 'Finish ' + stock + ' sell!!!!!'
         
-    
-
                
         
         
         
         
         
+class MultiTimeFlagger(MultiObjFlagger):
+    '''
+    @@summary: this class is to flagger a single stock over a period.
+    '''
+    def __init__(self, startDate, endDate, stockName, flagPeriod, flags,tolerance,toler50,toler100,
+                 flagWeights, timeWeights, sizeBackForward,fineSizeBackForward,
+                 finalSizeBackForward,saveToCsv,savePic,liveData=False,isBackTest=False):
+                     
+#        MultiObjFlagger.__init__(self, startDate, endDate, stockName,flags,tolerance,toler50,toler100,
+#                     flagWeights, timeWeights, sizeBackForward,fineSizeBackForward,
+#                     finalSizeBackForward,saveToCsv,savePic,liveData=False)
+                     
+        self.testStart = startDate
+        self.testEnd = endDate
+        self.stockName = stockName
+        self.flagPeriod = flagPeriod
+        
+        self.flags = flags
+        self.tolerance = tolerance
+        self.toler50 = toler50
+        self.toler100 = toler100
+        self.flagWeights = flagWeights
+        self.timeWeights = timeWeights
+        self.sizeBackForward = sizeBackForward
+        self.fineSizeBackForward = fineSizeBackForward
+        self.finalSizeBackForward = finalSizeBackForward
+        self.savePic = savePic
+        self.isBackTest =isBackTest
+        self.saveToCsv = saveToCsv
+        self.isBackTest=isBackTest
+        
+        # Access all historical data required for back testing
+        startAccessedData = (self.testStart[0]-self.flagPeriod, self.testStart[1],self.testStart[2]) 
+        self.dataObj = Quotes(startAccessedData, self.testEnd, self.stockName)
+             
+    def multiStrategy(self):
+        import datetime
+        quotes = self.dataObj.dataAccess()
+        
+        # flagBook
+        ###################################
+        ##    date | name | entryPrice | flagger
+        self.flagBook = []
+        
+        for periodStart in range(len(quotes)-self.flagPeriod*DAYSYEAR):
+            periodEnd = periodStart+self.flagPeriod*DAYSYEAR
+
+            objForDay = FlaggerByChangeSingle(startDate=None, endDate=None, stockName=self.stockName,
+                                           flags=self.flags,tolerance=self.tolerance,
+                                           toler50=self.toler50,toler100=self.toler100,
+                                           flagWeights=self.flagWeights, timeWeights=self.timeWeights, 
+                                           sizeBackForward=self.sizeBackForward,
+                                           fineSizeBackForward=self.fineSizeBackForward,
+                                           finalSizeBackForward=self.finalSizeBackForward,
+                                           liveData=False, others = quotes[periodStart:periodEnd])
+                                           
+            
+            objForDay.flagChecker(isBackTest=self.isBackTest)
+            
+            if objForDay.score > 0:
+                print '!!!!!!!!!!!!!!',objForDay.tradeType
+                flaggingDate = datetime.date.fromordinal(int(objForDay.quotes[-1,0]))
+                tradeType = objForDay.tradeType
+                #TODO: CHANGE THE SHARE VALUE
+                
+                
+                print 'find 1'
+                
+                
+                ################# record the flaggers for generating flag book ####
+                vec = sum(objForDay.flagIndicatorsCounter,1)
+                self.flagBook.append([flaggingDate, self.stockName,tradeType,
+                                      objForDay.entryPrice,vec])
+                if self.savePic:
+                    objForDay.plot(savePic=self.savePic)
+            
+                
+            print 'finish 1 day'
+            
+        if self.saveToCsv:
+            
+            pdflagBook = pd.DataFrame(data=self.flagBook,columns=['date','stockName',
+            'tradeType','entryPrice','flagState'])
+            pdflagBook.to_csv('backTestOrder.csv')
+        return pdflagBook
+        
+    
+                
+                                        
+                 
         
 
 
@@ -608,7 +923,6 @@ class CurrentFlaggerMultiStocks():
          
       
        
-        
 if __name__=='__main__':
                        
 #    finder = PeakValleyFinderWin(startDate = (2012,9,29), 
@@ -619,32 +933,26 @@ if __name__=='__main__':
 #                 
 #    a,b = finder.getPeaksValleys()
 #    finder.plot()
-    c = CurrentFlaggerSingleStock(startDate = (2012,9,29),   
-                       endDate = (2014,10,13), 
-                       stockName = 'CAT',
-                       flags=[0.08,0.16,0.2,0.275,0.30,0.33,0.5,1], 
-                       tolerance = 0.0075, 
-                       toler50 = 0.02,
-                       toler100 = 0.025,
-                       flagWeights = [1,1,1,1,1,1,1,1], 
-                       timeWeights = False,
-                       sizeBackForward=[30,30],
-                       fineSizeBackForward=[15,15],
-                       finalSizeBackForward=[10,5],
-                       liveData=True)
-                       
-    
-                       
-     
-                       
-    c.flagChecker()
-    c.plot()
-    
+#    c = FlaggerByChangeSingle(startDate = (2006,1,1),   
+#                       endDate = (2008,1,22), 
+#                       stockName = 'CAT',
+#                       flags=[0.08,0.16,0.2,0.28,0.30,0.33,0.5,1], 
+#                       tolerance = 0.0075, 
+#                       toler50 = 0.02,
+#                       toler100 = 0.025,
+#                       flagWeights = [1,1,1,1,1,1,1,1], 
+#                       timeWeights = False,
+#                       sizeBackForward=[30,30],
+#                       fineSizeBackForward=[15,15],
+#                       finalSizeBackForward=[10,5],
+#                       liveData=False)
+#    #profile.run('c.flagChecker()')
+#    c.flagChecker(isBackTest=False)                   
+#    c.plot()
+###    
 #############################################################################
-#    a  = CurrentFlaggerMultiStocks()
-#    st = time.clock()
-#    s,b = a.flagCheckers(startDate = (2012,9,29),   
-#                       endDate = (2014,10,13), 
+#    a  = MultiStockFlagger(startDate = (2012,9,29),   
+#                       endDate = (2014,10,15), 
 #                       stockNames = 'sp5002014',
 #                       flags=[0.08,0.16,0.2,0.275,0.30,0.33,0.5,1], 
 #                       tolerance = 0.0075, 
@@ -655,23 +963,24 @@ if __name__=='__main__':
 #                       sizeBackForward=[30,30],
 #                       fineSizeBackForward=[15,15],
 #                       finalSizeBackForward=[10,5],
-#                       saveToCsv=True,savePic=True,liveData=True)
+#                       saveToCsv=True,savePic=False,liveData=False)
+#    st = time.clock()
+#    
+#    a.flagCheckers()
 #    t = time.clock()
 #    d = t-st
 #    print d
-#                       
+##                       
                        
 ############################  test over several market #######################
 
     #marketList = ['ftse1002014','sp5002014','stoxx502014','aex252014','cac402014','ibex352014','mib402014']
-#    marketList = ['sp5002014']
+#    marketList = ['stoxx502014']
 #    for marketName in marketList:
-#        a  = CurrentFlaggerMultiStocks()
-#        st = time.clock()
-#        s,b = a.flagCheckers(startDate = (2012,9,29),   
-#                           endDate = (2014,10,14), 
+#        a  = MultiStockFlagger(startDate = (2012,9,29),   
+#                           endDate = (2014,10,17), 
 #                           stockNames = marketName,
-#                           flags=[0.08,0.16,0.2,0.275,0.30,0.33,0.5,1], 
+#                           flags=[0.08,0.16,0.2,0.275,0.30,0.33,0.38,0.5,1], 
 #                           tolerance = 0.0075, 
 #                           toler50 = 0.02,
 #                           toler100 = 0.025,
@@ -680,7 +989,25 @@ if __name__=='__main__':
 #                           sizeBackForward=[30,30],
 #                           fineSizeBackForward=[15,15],
 #                           finalSizeBackForward=[10,5],
-#                           saveToCsv=True,savePic=False,liveData=True)
+#                           saveToCsv=True,savePic=True,liveData=False)
+#        st = time.clock()
+#        
+#        a.flagCheckers()
 #        t = time.clock()
 #        d = t-st
 #        print d
+
+############################### Back testing for one stock ####################
+##
+    btOneStock = MultiTimeFlagger(startDate=(2010,1,1), endDate=(2013,2,14), stockName='CAT', 
+                                  flagPeriod=2, flags=[0.16,0.2,0.28,0.30,0.33,0.5,1], 
+                                  tolerance = 0.0075, 
+                                  toler50 = 0.02,
+                                  toler100 = 0.025,
+                                  flagWeights = [1,1,1,1,1,1,1], 
+                                  timeWeights = False,
+                                  sizeBackForward=[30,30],
+                                  fineSizeBackForward=[15,15],
+                                  finalSizeBackForward=[10,5],savePic=False,saveToCsv=True,
+                                  isBackTest=True)
+    a = btOneStock.flagCheckers()

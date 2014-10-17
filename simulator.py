@@ -6,6 +6,9 @@ import pandas as pd
 
 class singleSimulator:
     def __init__(self,stockName,testStartDate, testEndDate, flagPeriod, reportPeriod):
+        '''
+        @@summary: backtest one stock from testStartDate to testEndDate
+        '''
         self.stockName = stockName
         self.testStartDate = testStartDate
         self.testEndDate = testEndDate

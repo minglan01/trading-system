@@ -346,13 +346,13 @@ if __name__=='__main__':
         fileCSV1 = 'outputbuy'+'('+market+')'+'.csv'
         fileCSV2 = 'outputsell'+'('+market+')'+'.csv'
         
-        b = TableMaker(fileCSV1,tradeType='long', 
+        bbb = TableMaker(fileCSV1,tradeType='long', 
                        flags = [0.08,0.16,0.2,0.275,0.30,0.33,0.5,1.0])
                        
         s = TableMaker(fileCSV2,tradeType='short', 
                        flags = [0.08,0.16,0.2,0.275,0.30,0.33,0.5,1.0])  
                        
-        getChartForDay(b, s, marketName=market)
+        getChartForDay(bbb, s, marketName=market)
         
         if savePic == True:
             py.savefig('pic/flagByMarkets_current/'+market+'.png', format='png')
